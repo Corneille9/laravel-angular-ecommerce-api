@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StorePaymentRequest;
+use App\Http\Requests\UpdatePaymentRequest;
+use App\Http\Resources\PaymentResource;
 use App\Models\Order;
 use App\Models\Payment;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class PaymentController extends Controller
@@ -20,38 +22,7 @@ class PaymentController extends Controller
             $q->where('user_id', $user->id);
         })->with('order')->get();
 
-        return response()->json($payments);
-    }
-
-    /**
-     * Store a newly created payment for a given order.
-     */
-    public function store(Request $request)
-    {
-        $request->validate([
-            'order_id' => 'required|exists:orders,id',
-            'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|string',
-        ]);
-
-        $order = Order::find($request->order_id);
-
-        if ($order->user_id !== Auth::id()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        // Crée le paiement
-        $payment = Payment::create([
-            'order_id' => $order->id,
-            'amount' => $request->amount,
-            'payment_method' => $request->payment_method,
-            'status' => 'pending', // par défaut
-        ]);
-
-        return response()->json([
-            'message' => 'Payment created successfully',
-            'payment' => $payment
-        ], 201);
+        return PaymentResource::collection($payments);
     }
 
     /**
@@ -65,18 +36,14 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        return response()->json($payment);
+        return new PaymentResource($payment);
     }
 
     /**
      * Update the specified payment (status).
      */
-    public function update(Request $request, Payment $payment)
+    public function update(UpdatePaymentRequest $request, Payment $payment)
     {
-        $request->validate([
-            'status' => 'required|in:pending,completed,failed',
-        ]);
-
         if ($payment->order->user_id !== Auth::id()) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
@@ -87,7 +54,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'message' => 'Payment updated successfully',
-            'payment' => $payment
+            'payment' => new PaymentResource($payment)
         ]);
     }
 

@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AddToCartRequest;
+use App\Http\Requests\RemoveFromCartRequest;
+use App\Http\Requests\UpdateCartRequest;
+use App\Http\Resources\CartResource;
 use App\Models\Cart;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class CartController extends Controller
@@ -16,27 +19,23 @@ class CartController extends Controller
     {
         $user = Auth::user();
 
-        $cart = Cart::with('items.product')
-            ->where('user_id', $user->id)
-            ->first();
+        $cart = $user->cart;
+        $cart?->load('items.product');
+
+        $cart?->items()->whereDoesntHave('product')->delete();
 
         if (!$cart || $cart->items->isEmpty()) {
             return response()->json(['message' => 'Cart is empty'], 200);
         }
 
-        return response()->json($cart);
+        return new CartResource($cart);
     }
 
     /**
      * Add a product to the cart.
      */
-    public function store(Request $request)
+    public function store(AddToCartRequest $request)
     {
-        $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'quantity' => 'required|integer|min:1',
-        ]);
-
         $user = Auth::user();
 
         // Get or create cart
@@ -57,44 +56,36 @@ class CartController extends Controller
 
         return response()->json([
             'message' => 'Product added to cart successfully',
-            'data' => $cart->load('items.product')
+            'data' => new CartResource($cart->load('items.product'))
         ], 201);
     }
 
     /**
      * Display a specific cart.
      */
-    public function show($id)
+    public function show()
     {
         $user = Auth::user();
 
-        $cart = Cart::with('items.product')
-            ->where('id', $id)
-            ->where('user_id', $user->id)
-            ->first();
+        $cart = $user->cart;
 
         if (!$cart) {
-            return response()->json(['message' => 'Cart not found'], 404);
+            $cart = Cart::create([
+                'user_id' => $user->id,
+            ]);
         }
 
-        return response()->json($cart);
+        return new CartResource($cart);
     }
 
     /**
      * Update a cart item quantity.
      */
-    public function update(Request $request, $id)
+    public function update(UpdateCartRequest $request)
     {
-        $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'quantity' => 'required|integer|min:1',
-        ]);
-
         $user = Auth::user();
 
-        $cart = Cart::where('id', $id)
-            ->where('user_id', $user->id)
-            ->first();
+        $cart = $user->cart;
 
         if (!$cart) {
             return response()->json(['message' => 'Cart not found'], 404);
@@ -111,24 +102,18 @@ class CartController extends Controller
 
         return response()->json([
             'message' => 'Cart item updated successfully',
-            'data' => $cart->load('items.product')
+            'data' => new CartResource($cart->load('items.product'))
         ]);
     }
 
     /**
      * Remove a product from the cart.
      */
-    public function destroy(Request $request, $id)
+    public function destroy(RemoveFromCartRequest $request)
     {
-        $request->validate([
-            'product_id' => 'required|exists:products,id',
-        ]);
-
         $user = Auth::user();
 
-        $cart = Cart::where('id', $id)
-            ->where('user_id', $user->id)
-            ->first();
+        $cart = $user->cart;
 
         if (!$cart) {
             return response()->json(['message' => 'Cart not found'], 404);
@@ -144,7 +129,7 @@ class CartController extends Controller
 
         return response()->json([
             'message' => 'Item removed from cart successfully',
-            'data' => $cart->load('items.product')
+            'data' => new CartResource($cart->load('items.product'))
         ]);
     }
 }

@@ -2,10 +2,10 @@
 
 namespace Database\Seeders;
 
+use App\Models\Category;
+use App\Models\Product;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Http;
-use App\Models\Product;
-use App\Models\Category;
 use Illuminate\Support\Str;
 
 class ProductSeeder extends Seeder
@@ -15,7 +15,7 @@ class ProductSeeder extends Seeder
      */
     public function run(): void
     {
-        $limit = 30;
+        $limit = 100;
         $skip = 0;
 
         do {
@@ -29,6 +29,8 @@ class ProductSeeder extends Seeder
             $data = $response->json();
             $products = $data['products'] ?? [];
 
+            $products = collect($products)->shuffle()->toArray();
+
             foreach ($products as $item) {
                 $category = Category::where('name', ucfirst($item['category']))->first();
 
@@ -40,10 +42,9 @@ class ProductSeeder extends Seeder
                     ]);
                 }
 
-                Product::updateOrCreate(
+                $product = Product::updateOrCreate(
                     ['slug' => Str::slug($item['title'])],
                     [
-                        'category_id' => $category->id,
                         'name' => $item['title'],
                         'description' => $item['description'],
                         'price' => $item['price'],
@@ -52,6 +53,11 @@ class ProductSeeder extends Seeder
                         'is_active' => true,
                     ]
                 );
+
+                // Attacher la catégorie au produit si elle n'est pas déjà attachée
+                if (!$product->categories->contains($category->id)) {
+                    $product->categories()->attach($category->id);
+                }
             }
 
             $skip += $limit;

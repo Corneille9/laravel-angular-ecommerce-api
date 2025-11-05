@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreCategoryRequest;
+use App\Http\Requests\UpdateCategoryRequest;
+use App\Http\Resources\CategoryResource;
 use App\Models\Category;
 use Illuminate\Http\Request;
 
@@ -12,27 +15,49 @@ class CategoryController extends Controller
      * Display a listing of the resource.
      * @unauthenticated
      */
-    public function index()
+    public function index(Request $request)
     {
-        $categories = Category::with('children')->paginate();
+        $perPage = $request->input('per_page', 20);
+        $perPage = min(max((int)$perPage, 1), 100);
 
-        return response()->json($categories);
+        $query = Category::query();
+
+        // Search filter
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        // Sorting
+        $sortBy = $request->input('sort_by', 'created_at');
+        $sortOrder = $request->input('sort_order', 'desc');
+
+        $allowedSortFields = ['name', 'description', 'created_at'];
+        $allowedSortOrders = ['asc', 'desc'];
+
+        if (in_array($sortBy, $allowedSortFields) && in_array($sortOrder, $allowedSortOrders)) {
+            $query->orderBy($sortBy, $sortOrder);
+        }
+
+        $categories = $query->with('children')->paginate($perPage);
+
+        return CategoryResource::collection($categories);
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(StoreCategoryRequest $request)
     {
-        $request->validate([
-            'name' => 'required|string|unique:categories,name',
-            'description' => 'nullable|string',
-            'parent_id' => 'nullable|exists:categories,id',
-        ]);
-
         $category = Category::create($request->only('name', 'description', 'parent_id'));
 
-        return response()->json(['message' => 'Category created successfully', 'data' => $category], 201);
+        return response()->json([
+            'message' => 'Category created successfully',
+            'data' => new CategoryResource($category)
+        ], 201);
     }
 
     /**
@@ -42,23 +67,20 @@ class CategoryController extends Controller
     public function show(Category $category)
     {
         $category->load('children');
-        return response()->json($category);
+        return new CategoryResource($category);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Category $category)
+    public function update(UpdateCategoryRequest $request, Category $category)
     {
-        $request->validate([
-            'name' => 'required|string|unique:categories,name,' . $category->id,
-            'description' => 'nullable|string',
-            'parent_id' => 'nullable|exists:categories,id',
-        ]);
-
         $category->update($request->only('name', 'description', 'parent_id'));
 
-        return response()->json(['message' => 'Category updated successfully', 'data' => $category]);
+        return response()->json([
+            'message' => 'Category updated successfully',
+            'data' => new CategoryResource($category)
+        ]);
     }
 
     /**

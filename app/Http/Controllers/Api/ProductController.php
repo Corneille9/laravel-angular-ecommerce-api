@@ -3,8 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\UpdateProductRequest;
+use App\Http\Resources\ProductResource;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Storage;
 
 class ProductController extends Controller
 {
@@ -28,7 +33,7 @@ class ProductController extends Controller
         $perPage = $request->input('per_page', 20);
         $perPage = min(max((int)$perPage, 1), 100); // Limit between 1 and 100
 
-        $query = Product::with('category');
+        $query = Product::with('categories');
 
         // Search filter
         if ($request->filled('search')) {
@@ -41,7 +46,9 @@ class ProductController extends Controller
 
         // Category filter
         if ($request->filled('category_id')) {
-            $query->where('category_id', $request->input('category_id'));
+            $query->whereHas('categories', function ($q) use ($request) {
+                $q->where('categories.id', $request->input('category_id'));
+            });
         }
 
         // Price range filters
@@ -63,6 +70,14 @@ class ProductController extends Controller
             }
         }
 
+        if ($request->filled('min_stock')) {
+            $query->where('stock', '>=', $request->input('min_stock'));
+        }
+
+        if ($request->filled('max_stock')) {
+            $query->where('stock', '<=', $request->input('max_stock'));
+        }
+
         // Active status filter
         if ($request->has('is_active')) {
             $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
@@ -81,35 +96,32 @@ class ProductController extends Controller
 
         $products = $query->paginate($perPage);
 
-        return response()->json($products);
+        return ProductResource::collection($products);
     }
 
     /**
      * Store a newly created product.
      */
-    public function store(Request $request)
+    public function store(StoreProductRequest $request)
     {
-        $request->validate([
-            'name' => 'required|string|unique:products,name',
-            'category_id' => 'required|exists:categories,id',
-            'description' => 'nullable|string',
-            'price' => 'required|numeric|min:0',
-            'stock' => 'required|integer|min:0',
-            'image' => 'nullable|image|max:2048',
-        ]);
-
-        $data = $request->only('name', 'category_id', 'description', 'price', 'stock');
+        $data = $request->only('name', 'description', 'price', 'stock');
+        $data['slug'] = \Str::slug($request->name);
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('products', 'public');
-            $data['image'] = $path;
+            $data['image'] = Storage::url($path);
         }
 
         $product = Product::create($data);
 
+        // Attacher les catégories
+        $product->categories()->attach($request->input('category_ids'));
+
+        $product->load('categories');
+
         return response()->json([
             'message' => 'Product created successfully',
-            'data' => $product
+            'data' => new ProductResource($product)
         ], 201);
     }
 
@@ -119,36 +131,40 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        $product->load('category');
-        return response()->json($product);
+        $product->load('categories');
+        return new ProductResource($product);
     }
 
     /**
      * Update the specified product.
      */
-    public function update(Request $request, Product $product)
+    public function update(UpdateProductRequest $request, Product $product)
     {
-        $request->validate([
-            'name' => 'sometimes|required|string|unique:products,name,' . $product->id,
-            'category_id' => 'sometimes|required|exists:categories,id',
-            'description' => 'nullable|string',
-            'price' => 'sometimes|required|numeric|min:0',
-            'stock' => 'sometimes|required|integer|min:0',
-            'image' => 'nullable|image|max:2048',
-        ]);
+        $data = $request->only('name', 'description', 'price', 'stock');
 
-        $data = $request->only('name', 'category_id', 'description', 'price', 'stock');
+        // Mettre à jour le slug si le nom change
+        if ($request->filled('name')) {
+            $data['slug'] = \Str::slug($request->name);
+        }
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('products', 'public');
-            $data['image'] = $path;
+            $data['image'] = Storage::url($path);
+
+            Log::info($data['image']);
         }
 
         $product->update($data);
 
+        if ($request->has('category_ids')) {
+            $product->categories()->sync($request->input('category_ids'));
+        }
+
+        $product->load('categories');
+
         return response()->json([
             'message' => 'Product updated successfully',
-            'data' => $product
+            'data' => new ProductResource($product)
         ]);
     }
 
@@ -158,7 +174,7 @@ class ProductController extends Controller
     public function destroy(Product $product)
     {
         if ($product->image) {
-            \Storage::disk('public')->delete($product->image);
+            Storage::disk('public')->delete($product->image);
         }
 
         $product->delete();

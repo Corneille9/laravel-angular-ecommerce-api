@@ -16,6 +16,9 @@ class Payment extends Model
         'amount',
         'payment_method',
         'status',
+        'stripe_checkout_session_id',
+        'stripe_payment_intent_id',
+        'stripe_checkout_url',
     ];
 
     public function order(): BelongsTo

@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Cart;
+use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
@@ -19,91 +18,21 @@ class OrderController extends Controller
         $user = Auth::user();
         $orders = Order::with('items.product')->where('user_id', $user->id)->get();
 
-        return response()->json($orders);
-    }
-
-    /**
-     * Store a newly created order from the user's cart.
-     * @throws \Throwable
-     */
-    public function store(Request $request)
-    {
-        $user = Auth::user();
-
-        $cart = Cart::with('items.product')->where('user_id', $user->id)->first();
-
-        if (!$cart || $cart->items->isEmpty()) {
-            return response()->json(['message' => 'Cart is empty'], 400);
-        }
-
-
-        try {
-            DB::beginTransaction();
-
-            $total = $cart->items->sum(function ($item) {
-                return $item->product->price * $item->quantity;
-            });
-
-            $order = Order::create([
-                'user_id' => $user->id,
-                'total' => $total,
-                'status' => 'pending',
-            ]);
-
-            foreach ($cart->items as $cartItem) {
-                $order->items()->create([
-                    'product_id' => $cartItem->product_id,
-                    'quantity' => $cartItem->quantity,
-                    'price' => $cartItem->product->price,
-                ]);
-
-                $cartItem->product->decrement('stock', $cartItem->quantity);
-            }
-
-            $cart->items()->delete();
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Order created successfully from cart',
-                'data' => $order->load('items.product')
-            ], 201);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['message' => 'Failed to create order', 'error' => $e->getMessage()], 500);
-        }
+        return OrderResource::collection($orders);
     }
 
     /**
      * Display the specified order.
      */
-    public function show(Order $order)
+    public function show(Request $request, $id)
     {
-        $order->load('items.product');
-        return response()->json($order);
-    }
+        $user = Auth::user();
+        $order = Order::with('items.product')->where('id', $id)->where('user_id', $user->id)->first();
 
-    /**
-     * Update the specified order in storage (status).
-     */
-    public function update(Request $request, Order $order)
-    {
-        $request->validate([
-            'status' => 'required|in:pending,paid,shipped,completed,cancelled',
-        ]);
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
 
-        $order->update(['status' => $request->status]);
-
-        return response()->json(['message' => 'Order updated successfully', 'data' => $order]);
-    }
-
-    /**
-     * Remove the specified order from storage.
-     */
-    public function destroy(Order $order)
-    {
-        $order->delete();
-        return response()->json(['message' => 'Order deleted successfully']);
+        return new OrderResource($order);
     }
 }
