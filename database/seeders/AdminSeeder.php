@@ -14,7 +14,7 @@ class AdminSeeder extends Seeder
     public function run(): void
     {
         // Créer un utilisateur admin par défaut
-        User::updateOrCreate(
+        $user = User::updateOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Admin User',
@@ -22,6 +22,8 @@ class AdminSeeder extends Seeder
                 'role' => 'admin',
             ]
         );
+
+                    $user->markEmailAsVerified();
 
         $this->command->info('Admin user created successfully!');
         $this->command->info('Email: admin@example.com');
