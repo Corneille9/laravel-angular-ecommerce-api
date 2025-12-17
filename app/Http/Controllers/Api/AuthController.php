@@ -46,6 +46,7 @@ class AuthController extends Controller
             'role' => 'user',
         ]);
 
+        $user->markEmailAsVerified();
         // Send email verification code
         $verificationService = new VerificationCodeService();
         $verificationService->sendEmailVerificationCode($user);
